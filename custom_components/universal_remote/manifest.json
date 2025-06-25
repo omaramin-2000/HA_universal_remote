@@ -1,0 +1,10 @@
+{
+  "domain": "universal_remote",
+  "name": "Universal Remote",
+  "version": "1.0.0",
+  "documentation": "https://github.com/omaramin-2000/universal_remote",
+  "requirements": [],
+  "dependencies": ["remote"],
+  "codeowners": ["@omaramin-2000"],
+  "integration_type": "platform"
+}

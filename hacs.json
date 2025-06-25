@@ -1,0 +1,9 @@
+{
+  "name": "Universal Remote",
+  "content_in_root": false,
+  "render_readme": true,  
+  "render_release_notes": true,  
+  "domains": ["universal_remote"],
+  "homeassistant": "2025.6.3",
+  "persistent_directory": "custom_components"  
+}
