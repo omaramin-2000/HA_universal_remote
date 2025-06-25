@@ -16,6 +16,7 @@ from homeassistant.components.remote import (
     SERVICE_SEND_COMMAND,
     RemoteEntity,
     RemoteEntityFeature,
+    PLATFORM_SCHEMA,
 )
 
 from homeassistant.const import CONF_NAME
