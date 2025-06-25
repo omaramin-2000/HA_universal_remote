@@ -2,7 +2,7 @@
 import logging
 import voluptuous as vol
 
-from homeassistant.components.remote import RemoteEntity, PLATFORM_SCHEMA
+from homeassistant.components.remote import RemoteEntity, PLATFORM_SCHEMA, RemoteEntityFeature
 from homeassistant.const import CONF_NAME
 import homeassistant.helpers.config_validation as cv
 
@@ -51,7 +51,14 @@ class UniversalRemote(RemoteEntity):
         self._device = device
         self._mqtt_topic = mqtt_topic
         self._attr_is_on = True
-        self._attr_supported_features = SUPPORT_UNIVERSAL_REMOTE
+        self._attr_supported_features = (
+            RemoteEntityFeature.LEARN_COMMAND
+            | RemoteEntityFeature.SEND_COMMAND
+            | RemoteEntityFeature.DELETE_COMMAND
+            | RemoteEntityFeature.TOGGLE
+            | RemoteEntityFeature.TURN_ON
+            | RemoteEntityFeature.TURN_OFF
+        )
 
     @property
     def available(self):
