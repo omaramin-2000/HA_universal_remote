@@ -91,7 +91,6 @@ class UniversalRemote(RemoteEntity):
         if self._backend == "esphome":
             for cmd in command:
                 data = {"command": cmd}
-                # Optionally add more parameters from kwargs if needed
                 if "num_repeats" in kwargs:
                     data["num_repeats"] = kwargs["num_repeats"]
                 if "delay_secs" in kwargs:
@@ -105,7 +104,13 @@ class UniversalRemote(RemoteEntity):
                 _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
         elif self._backend == "tasmota":
             for cmd in command:
-                payload = {"Protocol": "IR", "Data": cmd}
+                try:
+                    # Try to parse as JSON
+                    payload = json.loads(cmd)
+                    # If successful, use as-is
+                except (json.JSONDecodeError, TypeError):
+                    # If not JSON, wrap as IR code
+                    payload = {"Protocol": "IR", "Data": cmd}
                 await self.hass.services.async_call(
                     "mqtt",
                     "publish",
