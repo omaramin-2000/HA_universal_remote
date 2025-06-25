@@ -2,6 +2,7 @@
 import logging
 import voluptuous as vol
 import asyncio
+import json
 
 from homeassistant.components.remote import (
     ATTR_ALTERNATIVE,
@@ -110,7 +111,7 @@ class UniversalRemote(RemoteEntity):
                     "publish",
                     {
                         "topic": f"cmnd/{self._mqtt_topic}/IRSend",
-                        "payload": self.hass.helpers.json.dumps(payload)
+                        "payload": json.dumps(payload)
                     },
                     blocking=True,
                 )
