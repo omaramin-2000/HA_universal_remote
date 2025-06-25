@@ -1,4 +1,4 @@
-# Universal Remote
+# Home Assistant Universal Remote
 
 [![hacs badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
 
