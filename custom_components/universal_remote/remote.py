@@ -105,25 +105,33 @@ class UniversalRemote(RemoteEntity):
         elif self._backend == "tasmota":
             for cmd in command:
                 try:
-                    # Try to parse as JSON
                     payload = json.loads(cmd)
-                    # If successful, use as-is
+                    # Detect RF payload by typical RF keys
+                    if (
+                        "RfSync" in payload
+                        or "RfCode" in payload
+                        or payload.get("Protocol", "").upper() == "RF"
+                    ):
+                        topic_cmd = "RfSend"
+                    else:
+                        topic_cmd = "IRSend"
                 except (json.JSONDecodeError, TypeError):
-                    # If not JSON, wrap as IR code
+                    # Not JSON, treat as IR code
                     payload = {"Protocol": "IR", "Data": cmd}
+                    topic_cmd = "IRSend"
                 await self.hass.services.async_call(
                     "mqtt",
                     "publish",
                     {
-                        "topic": f"cmnd/{self._mqtt_topic}/IRSend",
+                        "topic": f"cmnd/{self._mqtt_topic}/{topic_cmd}",
                         "payload": json.dumps(payload)
                     },
                     blocking=True,
                 )
                 _LOGGER.debug("Sent '%s' to Tasmota MQTT topic %s", cmd, self._mqtt_topic)
 
-    async def async_learn_command(self, command=None, **kwargs):
-        """Learn a command and save it to storage."""
+    async def async_learn_command(self, command=None, command_type="ir", **kwargs):
+        """Learn a command (IR or RF) and save it to storage."""
         if not command:
             _LOGGER.error("No command name provided for learning.")
             return
@@ -135,7 +143,11 @@ class UniversalRemote(RemoteEntity):
         learned_code = None
 
         if self._backend == "esphome":
-            event_type = f"esphome.{self._device}_ir_learned"
+            # Optionally pass command_type to ESPHome if your YAML supports it
+            data = {}
+            if command_type:
+                data["command_type"] = command_type
+            event_type = f"esphome.{self._device}_{command_type}_learned"
             event_future = asyncio.Future()
 
             def _event_listener(event):
@@ -149,7 +161,7 @@ class UniversalRemote(RemoteEntity):
             await self.hass.services.async_call(
                 "esphome",
                 f"{self._device}_learn",
-                {},
+                data,
                 blocking=True,
             )
             try:
@@ -167,14 +179,15 @@ class UniversalRemote(RemoteEntity):
 
             @callback
             def _mqtt_message_received(msg):
-                import json
                 payload = json.loads(msg.payload)
-                if "IrReceived" in payload:
-                    code = payload["IrReceived"].get("Data")
-                elif "RfReceived" in payload:
-                    code = payload["RfReceived"].get("Data")
-                else:
-                    code = None
+                code = None
+                if command_type == "rf" and "RfReceived" in payload:
+                    code = payload["RfReceived"]
+                elif command_type == "ir":
+                    if "IrReceived" in payload:
+                        code = payload["IrReceived"]
+                    elif "IrHVAC" in payload:
+                        code = payload["IrHVAC"]
                 if code and not event_future.done():
                     event_future.set_result(code)
 
@@ -182,8 +195,7 @@ class UniversalRemote(RemoteEntity):
                 topic, _mqtt_message_received
             )
 
-            # Trigger learning mode on Tasmota (usually via a button or command)
-            # You may need to send a command to start learning, depending on your Tasmota setup
+            # User must trigger learning mode on Tasmota device
 
             try:
                 learned_code = await asyncio.wait_for(event_future, timeout=20)
