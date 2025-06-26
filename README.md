@@ -16,15 +16,19 @@ A Home Assistant custom integration for controlling universal IR/RF remotes usin
 
 - Works with ESPHome and Tasmota-based universal remotes.
 - Sends IR and RF commands via Home Assistant services or automations.
+- Supports both protocol-based and raw data IR/RF commands.
 - YAML configuration for multiple remotes and backends.
 - Compatible with MQTT for Tasmota devices.
 - HACS-friendly for easy installation and updates.
+- Learns and stores IR/RF codes for reuse.
 
 ---
 
 ## Installation
 
 ### 1. HACS (Recommended)
+
+[![Open your Home Assistant instance and open a repository inside the Home Assistant Community Store.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=omaramin-2000&repository=HA_universal_remote&category=integration)
 
 1. Go to **HACS → Integrations → Custom repositories**.
 2. Add your repo URL (e.g., `https://github.com/omaramin-2000/universal_remote`).
@@ -46,12 +50,187 @@ Add your remote setup to `configuration.yaml`:
 
 ```yaml
 remote:
+    # ESPHOME
   - platform: universal_remote
     name: "Living Room Remote"
     backend: esphome
     device: livingroom_ir
-
+    
+    # TASMOTA
   - platform: universal_remote
     name: "Bedroom Remote"
     backend: tasmota
     mqtt_topic: Esp8266_universal_remote
+```
+
+### Configuration Options
+
+| Option        | Required | Description                                                                 |
+|---------------|----------|-----------------------------------------------------------------------------|
+| `platform`    | Yes      | Must be `universal_remote`                                                  |
+| `name`        | Yes      | Friendly name for your remote                                               |
+| `backend`     | Yes      | Either `esphome` or `tasmota`                                               |
+| `device`      | Yes\*    | ESPHome device name (required for ESPHome backend)                          |
+| `mqtt_topic`  | Yes\*    | MQTT topic for Tasmota device (required for Tasmota backend)                |
+
+\* Only one of `device` or `mqtt_topic` is required, depending on the backend.
+
+### How to Find Your Tasmota MQTT Topic
+
+To control your Tasmota device, you need to know its **MQTT Topic**.  
+You can find this in the Tasmota web interface:
+
+1. Open your Tasmota device’s web UI in your browser.
+2. Go to **Information**.
+3. Look for the field labeled **MQTT Topic**.
+
+This is the value you should use for `mqtt_topic` in your Home Assistant configuration.
+
+**Example screenshot:**
+
+![How to find your Tasmota MQTT Topic](./Screenshot%202025-06-25%20201748.png)
+
+In this example, the MQTT Topic is `Esp8266_universal_remote`.
+
+Use this value in your configuration:
+
+```yaml
+  - platform: universal_remote
+    name: "Bedroom Remote"
+    backend: tasmota
+    mqtt_topic: Esp8266_universal_remote
+```
+
+---
+
+## Usage
+
+### Sending Commands
+
+You can send IR or RF commands using the `remote.send_command` service in Home Assistant.
+
+#### For Tasmota
+
+- **IR Example (protocol-based):**
+
+  ```yaml
+  service: remote.send_command
+  target:
+    entity_id: remote.bedroom_remote
+  data:
+    command:
+      - '{"Protocol":"SAMSUNG","Bits":32,"Data":"0xE0E040BF"}'
+  ```
+
+- **IR Example (raw):**
+
+  ```yaml
+  service: remote.send_command
+  target:
+    entity_id: remote.bedroom_remote
+  data:
+    command:
+      - '9000,4500,560,560,560,560,560,1690,560,560,560,560,560,560,560,560,560,560'
+  ```
+
+- **RF Example (protocol-based):**
+
+  ```yaml
+  service: remote.send_command
+  target:
+    entity_id: remote.bedroom_remote
+  data:
+    command:
+      - '{"RfSync":12340,"RfLow":420,"RfHigh":1240,"RfCode":"0x123456"}'
+  ```
+
+#### For ESPHome
+
+- **IR or RF Example:**
+
+  ```yaml
+  service: remote.send_command
+  target:
+    entity_id: remote.living_room_remote
+  data:
+    command:
+      - "0xE0E040BF"
+  ```
+
+  > The format and interpretation of the command depend on your ESPHome YAML configuration.  
+  > You can pass protocol-based or raw codes as strings, but your ESPHome device must be set up to handle them.
+
+---
+
+### Learning Commands
+
+You can use the `remote.learn_command` service to learn IR or RF codes. The learned codes are stored in `/config/.storage/universal_remote_LEARNED_codes` and can be reused.
+
+#### Example:
+
+```yaml
+service: remote.learn_command
+target:
+  entity_id: remote.bedroom_remote
+data:
+  command:
+    - "power"
+```
+
+- Follow your device's instructions to put it in learning mode (e.g., point your remote and press the button).
+- The code will be saved and can be sent later using `remote.send_command`.
+
+---
+
+## Notes & Tips
+
+- **Tasmota:**  
+  - The integration automatically detects whether to use `IRSend` or `RfSend` based on your command payload.
+  - You do **not** need to specify the topic; just provide the correct JSON or raw string.
+
+- **ESPHome:**  
+  - You must define the corresponding `send` and `learn` services in your ESPHome YAML.
+  - The integration passes the command string to ESPHome; your ESPHome config must know how to interpret it.
+
+- **Multiple Remotes:**  
+  - You can define as many remotes as you want, each with its own backend and configuration.
+
+- **Supported Formats:**  
+  - Protocol-based (e.g., NEC, SAMSUNG, etc.) and raw data for both IR and RF are supported.
+  - For Tasmota, see [Tasmota IR Docs](https://tasmota.github.io/docs/Tasmota-IR/) and [Tasmota RF Docs](https://tasmota.github.io/docs/RF-Protocol/).
+
+---
+
+## Troubleshooting
+
+- If commands are not working, check your device logs and ensure your payload matches what your hardware expects.
+- For ESPHome, verify your YAML configuration for the remote transmitter/receiver.
+- For Tasmota, ensure your device is online and the MQTT topic is correct.
+
+---
+
+## Example ESPHome YAML Snippet
+
+```yaml
+api:
+  services:
+    - service: send
+      variables:
+        command: string
+      then:
+        - remote_transmitter.transmit_samsung:
+            data: !lambda 'return strtol(command.c_str(), 0, 16);'
+    - service: learn
+      then:
+        - remote_receiver.start:
+            timeout: 10s
+```
+
+> Adjust the above to match your hardware and protocol.
+
+---
+
+## Questions?
+
+Open an issue on GitHub or ask in the [Home Assistant Community](https://community.home-assistant.io/).
+
