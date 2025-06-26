@@ -54,6 +54,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     backend = config[CONF_BACKEND]
     device = config.get(CONF_DEVICE)
     mqtt_topic = config.get(CONF_MQTT_TOPIC)
+    led_entity_id = config.get("led_entity_id")  # <-- add this line
 
     if backend == "esphome" and not device:
         _LOGGER.error("device must be set when backend is esphome")
@@ -62,17 +63,18 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         _LOGGER.error("mqtt_topic must be set when backend is tasmota")
         return
 
-    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic)])
+    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic, led_entity_id)])
 
 class UniversalRemote(RemoteEntity):
     """Universal Remote entity."""
 
-    def __init__(self, hass, name, backend, device, mqtt_topic):
+    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None):
         self.hass = hass
         self._attr_name = name
         self._backend = backend
         self._device = device
         self._mqtt_topic = mqtt_topic
+        self._led_entity_id = led_entity_id  # <-- add this line
         self._attr_is_on = True
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
@@ -158,6 +160,14 @@ class UniversalRemote(RemoteEntity):
 
             remove_listener = self.hass.bus.async_listen_once(event_type, _event_listener)
 
+            # Signal ESPHome that learning has started
+            await self.hass.services.async_call(
+                "esphome",
+                f"{self._device}_learning_started",
+                {},
+                blocking=True,
+            )
+
             await self.hass.services.async_call(
                 "esphome",
                 f"{self._device}_learn",
@@ -172,6 +182,13 @@ class UniversalRemote(RemoteEntity):
                 return
             finally:
                 remove_listener()
+                # Signal ESPHome that learning has ended
+                await self.hass.services.async_call(
+                    "esphome",
+                    f"{self._device}_learning_ended",
+                    {},
+                    blocking=True,
+                )
 
         elif self._backend == "tasmota":
             topic = f"tele/{self._mqtt_topic}/RESULT"
@@ -195,7 +212,12 @@ class UniversalRemote(RemoteEntity):
                 topic, _mqtt_message_received
             )
 
-            # User must trigger learning mode on Tasmota device
+            # Signal Tasmota LED (or other indicator) that learning has started
+            led_entity_id = getattr(self, "_led_entity_id", None)
+            if led_entity_id:
+                await self.hass.services.async_call(
+                    "light", "turn_on", {"entity_id": led_entity_id}, blocking=True
+                )
 
             try:
                 learned_code = await asyncio.wait_for(event_future, timeout=20)
@@ -205,6 +227,11 @@ class UniversalRemote(RemoteEntity):
                 return
             finally:
                 await unsub()
+                # Signal Tasmota LED (or other indicator) that learning has ended
+                if led_entity_id:
+                    await self.hass.services.async_call(
+                        "light", "turn_off", {"entity_id": led_entity_id}, blocking=True
+                    )
 
         if learned_code:
             # Load existing codes

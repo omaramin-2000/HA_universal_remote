@@ -61,6 +61,7 @@ remote:
     name: "Bedroom Remote"
     backend: tasmota
     mqtt_topic: Esp8266_universal_remote
+    led_entity_id: light.bedroom_remote_led
 ```
 
 ### Configuration Options
@@ -72,6 +73,7 @@ remote:
 | `backend`     | Yes      | Either `esphome` or `tasmota`                                               |
 | `device`      | Yes\*    | ESPHome device name (required for ESPHome backend)                          |
 | `mqtt_topic`  | Yes\*    | MQTT topic for Tasmota device (required for Tasmota backend)                |
+| `led_entity_id`| No      | Optional LED entity to indicate remote status (for Tasmota backend only)    |
 
 \* Only one of `device` or `mqtt_topic` is required, depending on the backend.
 
@@ -99,6 +101,7 @@ Use this value in your configuration:
     name: "Bedroom Remote"
     backend: tasmota
     mqtt_topic: Esp8266_universal_remote
+    led_entity_id: light.bedroom_remote_led  # Optional: entity to turn on during learning    
 ```
 
 ---
@@ -211,21 +214,38 @@ data:
 
 ## Example ESPHome YAML Snippet
 
-Below is a **generic example** for ESPHome that allows sending and learning any IR or RF code, without requiring a specific protocol (like `transmit_samsung`).  
+Below is a **generic example** for ESPHome that allows sending and learning any IR or RF code, without requiring a specific protocol.  
 This approach works with most IR/RF devices and is compatible with the universal remote integration.
 
 ```yaml
 remote_transmitter:
-  pin: GPIO14
+  pin: GPIOXX
   carrier_duty_percent: 50%
 
 remote_receiver:
-  pin: GPIO13
+  pin: GPIOXX
   dump: all
   buffer_size: 4kb
 
+output:
+  - platform: gpio
+    pin: GPIOXX
+    id: status_led_output
+
+light:
+  - platform: binary
+    name: "Status LED"
+    output: status_led_output
+    id: led_indicator
+
 api:
   services:
+    - service: learning_started
+      then:
+        - light.turn_on: led_indicator
+    - service: learning_ended
+      then:
+        - light.turn_off: led_indicator
     - service: send
       variables:
         command: string
@@ -239,16 +259,17 @@ api:
               return out;
     - service: learn
       then:
-        - remote_receiver.start:
-            timeout: 10s
+        # Optionally, you can add actions here if needed when learning starts
+        - logger.log: "Learning mode started"
 ```
 
 - **Sending:**  
   The `send` service expects a comma-separated string of raw timings (as learned or provided by your integration).
 - **Learning:**  
-  The `learn` service starts the receiver and will report the next IR/RF code it receives.
+  The `learn` service can be used to trigger an indicator (like an LED) or any other action you want when learning mode is started from Home Assistant.  
+  **Note:** ESPHome automatically dumps received IR/RF codes to the logs when `dump: all` is set. You can view these codes in the ESPHome logs and use them in Home Assistant.
 
-> Adjust the `pin` numbers to match your hardware.  
+> Adjust the `pin` numbers and actions to match your hardware.  
 > For advanced protocol support, see the [ESPHome Remote Transmitter docs](https://esphome.io/components/remote_transmitter.html).
 
 ---
@@ -256,4 +277,3 @@ api:
 ## Questions?
 
 Open an issue on GitHub or ask in the [Home Assistant Community](https://community.home-assistant.io/).
-
