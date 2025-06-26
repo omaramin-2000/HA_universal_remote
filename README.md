@@ -88,7 +88,7 @@ This is the value you should use for `mqtt_topic` in your Home Assistant configu
 
 **Example screenshot:**
 
-![How to find your Tasmota MQTT Topic](./Screenshot%202025-06-25%20201748.png)
+![How to find your Tasmota MQTT Topic](./TASMOTA-MQTT-Topic.png)
 
 In this example, the MQTT Topic is `Esp8266_universal_remote`.
 
