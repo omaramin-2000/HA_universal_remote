@@ -80,7 +80,8 @@ class UniversalRemote(RemoteEntity):
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
         )
-        self._store = Store(hass, 1, "universal_remote_LEARNED_codes")
+        store_filename = f"universal_remote_LEARNED_codes_{device or mqtt_topic}.json"
+        self._store = Store(hass, 1, store_filename)
 
     @property
     def available(self):
@@ -88,11 +89,19 @@ class UniversalRemote(RemoteEntity):
         return True
 
     async def async_send_command(self, command, **kwargs):
-        """Send a command."""
+        """Send a command by name or raw code."""
         if not isinstance(command, list):
             command = [command]
+        codes = await self._store.async_load() or {}
+        commands_to_send = []
+        for cmd in command:
+            # If the command is a known name, use the stored code
+            if cmd in codes:
+                commands_to_send.append(codes[cmd])
+            else:
+                commands_to_send.append(cmd)
         if self._backend == "esphome":
-            for cmd in command:
+            for cmd in commands_to_send:
                 data = {"command": cmd}
                 if "num_repeats" in kwargs:
                     data["num_repeats"] = kwargs["num_repeats"]
@@ -106,7 +115,7 @@ class UniversalRemote(RemoteEntity):
                 )
                 _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
         elif self._backend == "tasmota":
-            for cmd in command:
+            for cmd in commands_to_send:
                 try:
                     payload = json.loads(cmd)
                     # Detect RF payload by typical RF keys
@@ -237,11 +246,9 @@ class UniversalRemote(RemoteEntity):
         if learned_code:
             # Load existing codes
             codes = await self._store.async_load() or {}
-            device_codes = codes.get(self._device, {})
-            device_codes[command_name] = learned_code
-            codes[self._device] = device_codes
+            codes[command_name] = learned_code
             await self._store.async_save(codes)
-            _LOGGER.info("Saved learned code for %s:%s", self._device, command_name)
+            _LOGGER.info("Saved learned code for %s:%s", self._device or self._mqtt_topic, command_name)
 
     async def async_turn_on(self, **kwargs):
         self._attr_is_on = True
