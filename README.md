@@ -211,22 +211,45 @@ data:
 
 ## Example ESPHome YAML Snippet
 
+Below is a **generic example** for ESPHome that allows sending and learning any IR or RF code, without requiring a specific protocol (like `transmit_samsung`).  
+This approach works with most IR/RF devices and is compatible with the universal remote integration.
+
 ```yaml
+remote_transmitter:
+  pin: GPIO14
+  carrier_duty_percent: 50%
+
+remote_receiver:
+  pin: GPIO13
+  dump: all
+  buffer_size: 4kb
+
 api:
   services:
     - service: send
       variables:
         command: string
       then:
-        - remote_transmitter.transmit_samsung:
-            data: !lambda 'return strtol(command.c_str(), 0, 16);'
+        - remote_transmitter.transmit_raw:
+            code: !lambda |-
+              std::vector<uint32_t> out;
+              for (auto s : split(command, ',')) {
+                out.push_back(parse_number<uint32_t>(s));
+              }
+              return out;
     - service: learn
       then:
         - remote_receiver.start:
             timeout: 10s
 ```
 
-> Adjust the above to match your hardware and protocol.
+- **Sending:**  
+  The `send` service expects a comma-separated string of raw timings (as learned or provided by your integration).
+- **Learning:**  
+  The `learn` service starts the receiver and will report the next IR/RF code it receives.
+
+> Adjust the `pin` numbers to match your hardware.  
+> For advanced protocol support, see the [ESPHome Remote Transmitter docs](https://esphome.io/components/remote_transmitter.html).
 
 ---
 
