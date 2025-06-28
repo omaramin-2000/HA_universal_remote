@@ -237,8 +237,11 @@ class UniversalRemote(RemoteEntity):
                     _LOGGER.error("Timeout waiting for Tasmota learned code MQTT message.")
                     return
             finally:
-                if unsub is not None:
-                    await unsub()
+                if unsub:
+                    if asyncio.iscoroutinefunction(unsub):
+                        await unsub()
+                    else:
+                        unsub()
                 # Signal Tasmota LED (or other indicator) that learning has ended
                 if led_entity_id:
                     await self.hass.services.async_call(
