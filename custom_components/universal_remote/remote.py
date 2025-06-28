@@ -29,6 +29,7 @@ from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.core import callback
+from homeassistant.components.mqtt import async_subscribe
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -103,10 +104,10 @@ class UniversalRemote(RemoteEntity):
         if self._backend == "esphome":
             for cmd in commands_to_send:
                 data = {"command": cmd}
-                if "num_repeats" in kwargs:
-                    data["num_repeats"] = kwargs["num_repeats"]
-                if "delay_secs" in kwargs:
-                    data["delay_secs"] = kwargs["delay_secs"]
+                for key in ("num_repeats", "delay_secs"):
+                    value = kwargs.get(key)
+                    if value is not None:
+                        data[key] = value
                 await self.hass.services.async_call(
                     "esphome",
                     f"{self._device}_send",
@@ -218,9 +219,7 @@ class UniversalRemote(RemoteEntity):
                 if code and not event_future.done():
                     event_future.set_result(code)
 
-            unsub = await self.hass.components.mqtt.async_subscribe(
-                topic, _mqtt_message_received
-            )
+            unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
             # Signal Tasmota LED (or other indicator) that learning has started
             led_entity_id = getattr(self, "_led_entity_id", None)
