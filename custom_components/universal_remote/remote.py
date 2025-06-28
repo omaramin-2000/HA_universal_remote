@@ -219,23 +219,26 @@ class UniversalRemote(RemoteEntity):
                 if code and not event_future.done():
                     event_future.set_result(code)
 
-            unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
-
-            # Signal Tasmota LED (or other indicator) that learning has started
-            led_entity_id = getattr(self, "_led_entity_id", None)
-            if led_entity_id:
-                await self.hass.services.async_call(
-                    "light", "turn_on", {"entity_id": led_entity_id}, blocking=True
-                )
-
+            unsub = None
             try:
-                learned_code = await asyncio.wait_for(event_future, timeout=20)
-                _LOGGER.debug("Learned code from Tasmota: %s", learned_code)
-            except asyncio.TimeoutError:
-                _LOGGER.error("Timeout waiting for Tasmota learned code MQTT message.")
-                return
+                unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
+
+                # Signal Tasmota LED (or other indicator) that learning has started
+                led_entity_id = getattr(self, "_led_entity_id", None)
+                if led_entity_id:
+                    await self.hass.services.async_call(
+                        "light", "turn_on", {"entity_id": led_entity_id}, blocking=True
+                    )
+
+                try:
+                    learned_code = await asyncio.wait_for(event_future, timeout=20)
+                    _LOGGER.debug("Learned code from Tasmota: %s", learned_code)
+                except asyncio.TimeoutError:
+                    _LOGGER.error("Timeout waiting for Tasmota learned code MQTT message.")
+                    return
             finally:
-                await unsub()
+                if unsub is not None:
+                    await unsub()
                 # Signal Tasmota LED (or other indicator) that learning has ended
                 if led_entity_id:
                     await self.hass.services.async_call(
