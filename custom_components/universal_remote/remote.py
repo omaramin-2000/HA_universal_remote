@@ -104,10 +104,13 @@ class UniversalRemote(RemoteEntity):
         if self._backend == "esphome":
             for cmd in commands_to_send:
                 data = {"command": cmd}
-                for key in ("num_repeats", "delay_secs"):
+                # Only add keys if their value is not None
+                for key in ("num_repeats", "delay_secs", "hold_secs"):
                     value = kwargs.get(key)
                     if value is not None:
                         data[key] = value
+                # Remove any keys with None values (extra safety)
+                data = {k: v for k, v in data.items() if v is not None}
                 await self.hass.services.async_call(
                     "esphome",
                     f"{self._device}_send",
@@ -116,32 +119,35 @@ class UniversalRemote(RemoteEntity):
                 )
                 _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
         elif self._backend == "tasmota":
+            num_repeats = kwargs.get("num_repeats", 1)
+            delay_secs = kwargs.get("delay_secs", 0)
             for cmd in commands_to_send:
-                try:
-                    payload = json.loads(cmd)
-                    # Detect RF payload by typical RF keys
-                    if (
-                        "RfSync" in payload
-                        or "RfCode" in payload
-                        or payload.get("Protocol", "").upper() == "RF"
-                    ):
-                        topic_cmd = "RfSend"
-                    else:
+                for i in range(num_repeats):
+                    try:
+                        payload = json.loads(cmd)
+                        if (
+                            "RfSync" in payload
+                            or "RfCode" in payload
+                            or payload.get("Protocol", "").upper() == "RF"
+                        ):
+                            topic_cmd = "RfSend"
+                        else:
+                            topic_cmd = "IRSend"
+                    except (json.JSONDecodeError, TypeError):
+                        payload = {"Protocol": "IR", "Data": cmd}
                         topic_cmd = "IRSend"
-                except (json.JSONDecodeError, TypeError):
-                    # Not JSON, treat as IR code
-                    payload = {"Protocol": "IR", "Data": cmd}
-                    topic_cmd = "IRSend"
-                await self.hass.services.async_call(
-                    "mqtt",
-                    "publish",
-                    {
-                        "topic": f"cmnd/{self._mqtt_topic}/{topic_cmd}",
-                        "payload": json.dumps(payload)
-                    },
-                    blocking=True,
-                )
-                _LOGGER.debug("Sent '%s' to Tasmota MQTT topic %s", cmd, self._mqtt_topic)
+                    await self.hass.services.async_call(
+                        "mqtt",
+                        "publish",
+                        {
+                            "topic": f"cmnd/{self._mqtt_topic}/{topic_cmd}",
+                            "payload": json.dumps(payload)
+                        },
+                        blocking=True,
+                    )
+                    _LOGGER.debug("Sent '%s' to Tasmota MQTT topic %s", cmd, self._mqtt_topic)
+                    if i < num_repeats - 1 and delay_secs:
+                        await asyncio.sleep(delay_secs)
 
     async def async_learn_command(self, command=None, command_type="ir", **kwargs):
         """Learn a command (IR or RF) and save it to storage."""
