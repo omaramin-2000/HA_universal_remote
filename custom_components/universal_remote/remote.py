@@ -102,22 +102,24 @@ class UniversalRemote(RemoteEntity):
             else:
                 commands_to_send.append(cmd)
         if self._backend == "esphome":
+            num_repeats = kwargs.get("num_repeats", 1)
+            delay_secs = kwargs.get("delay_secs", 0)
+            hold_secs = kwargs.get("hold_secs", 0)
             for cmd in commands_to_send:
-                data = {"command": cmd}
-                # Only add keys if their value is not None
-                for key in ("num_repeats", "delay_secs", "hold_secs"):
-                    value = kwargs.get(key)
-                    if value is not None:
-                        data[key] = value
-                # Remove any keys with None values (extra safety)
-                data = {k: v for k, v in data.items() if v is not None}
-                await self.hass.services.async_call(
-                    "esphome",
-                    f"{self._device}_send",
-                    data,
-                    blocking=True,
-                )
-                _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
+                for i in range(num_repeats):
+                    await self.hass.services.async_call(
+                        "esphome",
+                        f"{self._device}_send",
+                        {"command": cmd},
+                        blocking=True,
+                    )
+                    _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
+                    # Hold the button if requested (simulate long press)
+                    if hold_secs and hold_secs > 0:
+                        await asyncio.sleep(hold_secs)
+                    # Delay between repeats, except after the last one
+                    if i < num_repeats - 1 and delay_secs:
+                        await asyncio.sleep(delay_secs)
         elif self._backend == "tasmota":
             num_repeats = kwargs.get("num_repeats", 1)
             delay_secs = kwargs.get("delay_secs", 0)
