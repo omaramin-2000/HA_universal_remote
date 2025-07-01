@@ -93,16 +93,20 @@ class UniversalRemote(RemoteEntity):
         # You can implement actual state checks here
         return True
 
-    async def async_send_command(self, command, **kwargs):
+    async def async_send_command(self, command, device=None, **kwargs):
         """Send a command by name or raw code."""
+        if not device:
+            _LOGGER.error("No device name provided for sending.")
+            return
         if not isinstance(command, list):
             command = [command]
         codes = await self._store.async_load() or {}
+        device_codes = codes.get(device, {})
         commands_to_send = []
         for cmd in command:
             # If the command is a known name, use the stored code
-            if cmd in codes:
-                commands_to_send.append(codes[cmd])
+            if cmd in device_codes:
+                commands_to_send.append(device_codes[cmd])
             else:
                 commands_to_send.append(cmd)
         if self._backend == "esphome":
