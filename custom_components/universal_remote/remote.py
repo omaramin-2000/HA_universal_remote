@@ -30,6 +30,8 @@ from homeassistant.helpers.storage import Store
 from homeassistant.util import dt as dt_util
 from homeassistant.core import callback
 from homeassistant.components.mqtt import async_subscribe
+from homeassistant.components import persistent_notification
+from datetime import timedelta
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_MQTT_TOPIC): cv.string,
     }
 )
+
+LEARNING_TIMEOUT = timedelta(seconds=60)
 
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up the Universal Remote platform."""
@@ -151,84 +155,108 @@ class UniversalRemote(RemoteEntity):
                     if i < num_repeats - 1 and delay_secs:
                         await asyncio.sleep(delay_secs)
 
-    async def async_learn_command(self, command=None, command_type="ir", **kwargs):
-        """Learn a command (IR or RF) and save it to storage."""
-        if not command:
-            _LOGGER.error("No command name provided for learning.")
+    async def async_learn_command(self, command=None, command_type="ir", device=None, timeout=None, **kwargs):
+        """Learn one or more commands and save them under the specified device."""
+        if not device:
+            _LOGGER.error("No device name provided for learning.")
             return
-        if isinstance(command, list):
-            command_name = command[0]
+        if not command:
+            _LOGGER.error("No command name(s) provided for learning.")
+            return
+
+        # Support both single string and list of commands
+        if isinstance(command, str):
+            command_names = [command]
         else:
-            command_name = command
+            command_names = list(command)
 
-        learned_code = None
+        # Use custom timeout if provided
+        learning_timeout = timedelta(seconds=timeout) if timeout else LEARNING_TIMEOUT
 
-        if self._backend == "esphome":
-            # Optionally pass command_type to ESPHome if your YAML supports it
-            data = {}
-            if command_type:
-                data["command_type"] = command_type
-            event_type = f"esphome.{self._device}_{command_type}_learned"
-            event_future = asyncio.Future()
+        # Load or create the storage file for this remote
+        codes = await self._store.async_load() or {}
+        device_codes = codes.get(device, {})
 
-            def _event_listener(event):
-                nonlocal learned_code
-                learned_code = event.data.get("code")
-                if learned_code and not event_future.done():
-                    event_future.set_result(learned_code)
-
-            remove_listener = self.hass.bus.async_listen_once(event_type, _event_listener)
-
-            # Signal ESPHome that learning has started
-            await self.hass.services.async_call(
-                "esphome",
-                f"{self._device}_learning_started",
-                {},
-                blocking=True,
+        for cmd_name in command_names:
+            notification_id = f"learn_command_{device}_{cmd_name}".replace(" ", "_").lower()
+            persistent_notification.async_create(
+                self.hass,
+                f"Press the '{cmd_name}' button on your '{device}' remote now.",
+                title="Learn command",
+                notification_id=notification_id,
             )
 
-            await self.hass.services.async_call(
-                "esphome",
-                f"{self._device}_learn",
-                data,
-                blocking=True,
-            )
-            try:
-                learned_code = await asyncio.wait_for(event_future, timeout=20)
-                _LOGGER.debug("Learned code from ESPHome: %s", learned_code)
-            except asyncio.TimeoutError:
-                _LOGGER.error("Timeout waiting for ESPHome learned code event.")
-                return
-            finally:
-                remove_listener()
-                # Signal ESPHome that learning has ended
+            learned_code = None
+
+            if self._backend == "esphome":
+                data = {}
+                if command_type:
+                    data["command_type"] = command_type
+                event_type = f"esphome.{self._device}_{command_type}_learned"
+                event_future = asyncio.Future()
+
+                def _event_listener(event):
+                    nonlocal learned_code
+                    learned_code = event.data.get("code")
+                    if learned_code and not event_future.done():
+                        event_future.set_result(learned_code)
+
+                remove_listener = self.hass.bus.async_listen_once(event_type, _event_listener)
+
+                # Signal ESPHome that learning has started
                 await self.hass.services.async_call(
                     "esphome",
-                    f"{self._device}_learning_ended",
+                    f"{self._device}_learning_started",
                     {},
                     blocking=True,
                 )
 
-        elif self._backend == "tasmota":
-            topic = f"tele/{self._mqtt_topic}/RESULT"
-            event_future = asyncio.Future()
+                await self.hass.services.async_call(
+                    "esphome",
+                    f"{self._device}_learn",
+                    data,
+                    blocking=True,
+                )
+                try:
+                    learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
+                    _LOGGER.debug("Learned code from ESPHome: %s", learned_code)
+                except asyncio.TimeoutError:
+                    _LOGGER.error("Timeout waiting for ESPHome learned code event.")
+                    persistent_notification.async_create(
+                        self.hass,
+                        f"Timeout: No code received for '{cmd_name}' on '{device}'.",
+                        title="Learn command",
+                        notification_id=notification_id,
+                    )
+                    continue
+                finally:
+                    remove_listener()
+                    await self.hass.services.async_call(
+                        "esphome",
+                        f"{self._device}_learning_ended",
+                        {},
+                        blocking=True,
+                    )
+                    persistent_notification.async_dismiss(self.hass, notification_id)
 
-            @callback
-            def _mqtt_message_received(msg):
-                payload = json.loads(msg.payload)
-                code = None
-                if command_type == "rf" and "RfReceived" in payload:
-                    code = payload["RfReceived"]
-                elif command_type == "ir":
-                    if "IrReceived" in payload:
-                        code = payload["IrReceived"]
-                    elif "IrHVAC" in payload:
-                        code = payload["IrHVAC"]
-                if code and not event_future.done():
-                    event_future.set_result(code)
+            elif self._backend == "tasmota":
+                topic = f"tele/{self._mqtt_topic}/RESULT"
+                event_future = asyncio.Future()
 
-            unsub = None
-            try:
+                @callback
+                def _mqtt_message_received(msg):
+                    payload = json.loads(msg.payload)
+                    code = None
+                    if command_type == "rf" and "RfReceived" in payload:
+                        code = payload["RfReceived"]
+                    elif command_type == "ir":
+                        if "IrReceived" in payload:
+                            code = payload["IrReceived"]
+                        elif "IrHVAC" in payload:
+                            code = payload["IrHVAC"]
+                    if code and not event_future.done():
+                        event_future.set_result(code)
+
                 unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
                 # Signal Tasmota LED (or other indicator) that learning has started
@@ -239,29 +267,36 @@ class UniversalRemote(RemoteEntity):
                     )
 
                 try:
-                    learned_code = await asyncio.wait_for(event_future, timeout=20)
+                    learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
                     _LOGGER.debug("Learned code from Tasmota: %s", learned_code)
                 except asyncio.TimeoutError:
                     _LOGGER.error("Timeout waiting for Tasmota learned code MQTT message.")
-                    return
-            finally:
-                if unsub:
-                    if asyncio.iscoroutinefunction(unsub):
-                        await unsub()
-                    else:
-                        unsub()
-                # Signal Tasmota LED (or other indicator) that learning has ended
-                if led_entity_id:
-                    await self.hass.services.async_call(
-                        "light", "turn_off", {"entity_id": led_entity_id}, blocking=True
+                    persistent_notification.async_create(
+                        self.hass,
+                        f"Timeout: No code received for '{cmd_name}' on '{device}'.",
+                        title="Learn command",
+                        notification_id=notification_id,
                     )
+                    continue
+                finally:
+                    if unsub:
+                        if asyncio.iscoroutinefunction(unsub):
+                            await unsub()
+                        else:
+                            unsub()
+                    if led_entity_id:
+                        await self.hass.services.async_call(
+                            "light", "turn_off", {"entity_id": led_entity_id}, blocking=True
+                        )
+                    persistent_notification.async_dismiss(self.hass, notification_id)
 
-        if learned_code:
-            # Load existing codes
-            codes = await self._store.async_load() or {}
-            codes[command_name] = learned_code
-            await self._store.async_save(codes)
-            _LOGGER.info("Saved learned code for %s:%s", self._device or self._mqtt_topic, command_name)
+            if learned_code:
+                device_codes[cmd_name] = learned_code
+                _LOGGER.info("Saved learned code for %s:%s", device, cmd_name)
+
+        # Save all learned codes for this device
+        codes[device] = device_codes
+        await self._store.async_save(codes)
 
     async def async_turn_on(self, **kwargs):
         self._attr_is_on = True
