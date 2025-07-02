@@ -134,8 +134,9 @@ class UniversalRemote(RemoteEntity):
             delay_secs = kwargs.get("delay_secs", 0)
             for cmd in commands_to_send:
                 for i in range(num_repeats):
-                    try:
-                        payload = json.loads(cmd)
+                    # If the command is a dict, use it directly; if string, try to parse as JSON, else wrap as IR
+                    if isinstance(cmd, dict):
+                        payload = cmd
                         if (
                             "RfSync" in payload
                             or "RfCode" in payload
@@ -144,9 +145,20 @@ class UniversalRemote(RemoteEntity):
                             topic_cmd = "RfSend"
                         else:
                             topic_cmd = "IRSend"
-                    except (json.JSONDecodeError, TypeError):
-                        payload = {"Protocol": "IR", "Data": cmd}
-                        topic_cmd = "IRSend"
+                    else:
+                        try:
+                            payload = json.loads(cmd)
+                            if (
+                                "RfSync" in payload
+                                or "RfCode" in payload
+                                or payload.get("Protocol", "").upper() == "RF"
+                            ):
+                                topic_cmd = "RfSend"
+                            else:
+                                topic_cmd = "IRSend"
+                        except (json.JSONDecodeError, TypeError):
+                            payload = {"Protocol": "IR", "Data": cmd}
+                            topic_cmd = "IRSend"
                     await self.hass.services.async_call(
                         "mqtt",
                         "publish",
