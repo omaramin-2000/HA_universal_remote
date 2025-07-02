@@ -49,6 +49,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_BACKEND): vol.In(["esphome", "tasmota"]),
         vol.Optional(CONF_DEVICE): cv.string,
         vol.Optional(CONF_MQTT_TOPIC): cv.string,
+        vol.Optional("led_entity_id"): cv.string,  
     }
 )
 
