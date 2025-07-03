@@ -50,7 +50,6 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_DEVICE): cv.string,
         vol.Optional(CONF_MQTT_TOPIC): cv.string,
         vol.Optional("led_entity_id"): cv.string,  
-        vol.Optional("tasmota_led_number", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=8)),
     }
 )
 
@@ -63,7 +62,6 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     device = config.get(CONF_DEVICE)
     mqtt_topic = config.get(CONF_MQTT_TOPIC)
     led_entity_id = config.get("led_entity_id")  # <-- add this line
-    tasmota_led_number = config.get("tasmota_led_number", 1)
 
     if backend == "esphome" and not device:
         _LOGGER.error("device must be set when backend is esphome")
@@ -72,23 +70,18 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         _LOGGER.error("mqtt_topic must be set when backend is tasmota")
         return
 
-    async_add_entities([
-        UniversalRemote(
-            hass, name, backend, device, mqtt_topic, led_entity_id, tasmota_led_number
-        )
-    ])
+    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic, led_entity_id)])
 
 class UniversalRemote(RemoteEntity):
     """Universal Remote entity."""
 
-    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None, tasmota_led_number=1):
+    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None):
         self.hass = hass
         self._attr_name = name
         self._backend = backend
         self._device = device
         self._mqtt_topic = mqtt_topic
-        self._led_entity_id = led_entity_id
-        self._tasmota_led_number = tasmota_led_number  # <-- use the argument, not config.get
+        self._led_entity_id = led_entity_id  # <-- add this line
         self._attr_is_on = True
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
@@ -283,18 +276,13 @@ class UniversalRemote(RemoteEntity):
 
                 unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
-                # Signal Tasmota LED indicator that learning has started
-                led_number = getattr(self, "_tasmota_led_number", 1)
-                led_power_topic = f"cmnd/{self._mqtt_topic}/LedPower{led_number}"
-                await self.hass.services.async_call(
-                    "mqtt",
-                    "publish",
-                    {
-                        "topic": led_power_topic,
-                        "payload": "ON"
-                    },
-                    blocking=True,
-                )
+                # Signal Tasmota LED (or other indicator) that learning has started
+                led_entity_id = getattr(self, "_led_entity_id", None)
+                domain = led_entity_id.split(".")[0]
+                if led_entity_id:                    
+                    await self.hass.services.async_call(
+                        domain, "turn_on", {"entity_id": led_entity_id}, blocking=True
+                    )
 
                 try:
                     learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
@@ -314,18 +302,10 @@ class UniversalRemote(RemoteEntity):
                             await unsub()
                         else:
                             unsub()
-                    # Turn off the Tasmota LED indicator
-                    led_number = getattr(self, "_tasmota_led_number", 1)
-                    led_power_topic = f"cmnd/{self._mqtt_topic}/LedPower{led_number}"
-                    await self.hass.services.async_call(
-                        "mqtt",
-                        "publish",
-                        {
-                            "topic": led_power_topic,
-                            "payload": "OFF"
-                        },
-                        blocking=True,
-                    )
+                    if led_entity_id:
+                        await self.hass.services.async_call(
+                            domain, "turn_off", {"entity_id": led_entity_id}, blocking=True
+                        )
                     persistent_notification.async_dismiss(self.hass, notification_id)
 
             if learned_code:
