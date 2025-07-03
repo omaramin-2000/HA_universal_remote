@@ -61,7 +61,7 @@ remote:
     name: "Bedroom Remote"
     backend: tasmota
     mqtt_topic: Esp8266_universal_remote
-    tasmota_led_number: 2  # Use LedPower<x> for learning indicator
+    led_entity_id: light.bedroom_remote_led
 ```
 
 ### Configuration Options
