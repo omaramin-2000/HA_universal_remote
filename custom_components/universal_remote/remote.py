@@ -50,6 +50,7 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Optional(CONF_DEVICE): cv.string,
         vol.Optional(CONF_MQTT_TOPIC): cv.string,
         vol.Optional("led_entity_id"): cv.string,  
+        vol.Optional("tasmota_led_number", default=1): vol.All(vol.Coerce(int), vol.Range(min=1, max=8)),
     }
 )
 
@@ -82,6 +83,7 @@ class UniversalRemote(RemoteEntity):
         self._device = device
         self._mqtt_topic = mqtt_topic
         self._led_entity_id = led_entity_id  # <-- add this line
+        self._tasmota_led_number = config.get("tasmota_led_number", 1)
         self._attr_is_on = True
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
@@ -276,12 +278,18 @@ class UniversalRemote(RemoteEntity):
 
                 unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
-                # Signal Tasmota LED (or other indicator) that learning has started
-                led_entity_id = getattr(self, "_led_entity_id", None)
-                if led_entity_id:
-                    await self.hass.services.async_call(
-                        "light", "turn_on", {"entity_id": led_entity_id}, blocking=True
-                    )
+                # Signal Tasmota LED indicator that learning has started
+                led_number = getattr(self, "_tasmota_led_number", 1)
+                led_power_topic = f"cmnd/{self._mqtt_topic}/LedPower{led_number}"
+                await self.hass.services.async_call(
+                    "mqtt",
+                    "publish",
+                    {
+                        "topic": led_power_topic,
+                        "payload": "ON"
+                    },
+                    blocking=True,
+                )
 
                 try:
                     learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
@@ -301,10 +309,18 @@ class UniversalRemote(RemoteEntity):
                             await unsub()
                         else:
                             unsub()
-                    if led_entity_id:
-                        await self.hass.services.async_call(
-                            "light", "turn_off", {"entity_id": led_entity_id}, blocking=True
-                        )
+                    # Turn off the Tasmota LED indicator
+                    led_number = getattr(self, "_tasmota_led_number", 1)
+                    led_power_topic = f"cmnd/{self._mqtt_topic}/LedPower{led_number}"
+                    await self.hass.services.async_call(
+                        "mqtt",
+                        "publish",
+                        {
+                            "topic": led_power_topic,
+                            "payload": "OFF"
+                        },
+                        blocking=True,
+                    )
                     persistent_notification.async_dismiss(self.hass, notification_id)
 
             if learned_code:
