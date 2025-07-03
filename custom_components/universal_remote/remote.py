@@ -63,6 +63,7 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     device = config.get(CONF_DEVICE)
     mqtt_topic = config.get(CONF_MQTT_TOPIC)
     led_entity_id = config.get("led_entity_id")  # <-- add this line
+    tasmota_led_number = config.get("tasmota_led_number", 1)
 
     if backend == "esphome" and not device:
         _LOGGER.error("device must be set when backend is esphome")
@@ -71,19 +72,23 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         _LOGGER.error("mqtt_topic must be set when backend is tasmota")
         return
 
-    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic, led_entity_id)])
+    async_add_entities([
+        UniversalRemote(
+            hass, name, backend, device, mqtt_topic, led_entity_id, tasmota_led_number
+        )
+    ])
 
 class UniversalRemote(RemoteEntity):
     """Universal Remote entity."""
 
-    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None):
+    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None, tasmota_led_number=1):
         self.hass = hass
         self._attr_name = name
         self._backend = backend
         self._device = device
         self._mqtt_topic = mqtt_topic
-        self._led_entity_id = led_entity_id  # <-- add this line
-        self._tasmota_led_number = config.get("tasmota_led_number", 1)
+        self._led_entity_id = led_entity_id
+        self._tasmota_led_number = tasmota_led_number  # <-- use the argument, not config.get
         self._attr_is_on = True
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
