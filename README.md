@@ -46,41 +46,95 @@ A Home Assistant custom integration for controlling universal IR/RF remotes usin
 
 ## Configuration
 
-Add your remote setup to `configuration.yaml`:
+This integration supports both **Tasmota** and **ESPHome** devices as universal remotes.  
+Below you'll find detailed instructions for each platform, including how to configure learning indicators and example Home Assistant configurations.
+
+---
+
+### 1. ESPHome Configuration
+
+ESPHome-based devices communicate directly with Home Assistant and can be customized via YAML.
+
+#### Example ESPHome YAML Snippet
+
+Below is a **generic example** for ESPHome that allows sending and learning any IR or RF code, without requiring a specific protocol.  
+This approach works with most IR/RF devices and is compatible with the universal remote integration.
+
+```yaml
+remote_transmitter:
+  pin: GPIOXX
+  carrier_duty_percent: 50%
+
+remote_receiver:
+  pin: GPIOXX
+  dump: all
+  buffer_size: 4kb
+
+output:
+  - platform: gpio
+    pin: GPIOXX
+    id: status_led_output
+
+light:
+  - platform: binary
+    name: "Status LED"
+    output: status_led_output
+    id: led_indicator
+
+api:
+  services:
+    - service: learning_started
+      then:
+        - light.turn_on: led_indicator
+    - service: learning_ended
+      then:
+        - light.turn_off: led_indicator
+    - service: send
+      variables:
+        command: string
+      then:
+        - remote_transmitter.transmit_raw:
+            code: !lambda |-
+              std::vector<uint32_t> out;
+              for (auto s : split(command, ',')) {
+                out.push_back(parse_number<uint32_t>(s));
+              }
+              return out;
+    - service: learn
+      then:
+        # Optionally, you can add actions here if needed when learning starts
+        - logger.log: "Learning mode started"
+```
+
+- **Sending:**  
+  The `send` service expects a comma-separated string of raw timings (as learned or provided by your integration).
+- **Learning:**  
+  The `learn` service can be used to trigger an indicator (like an LED) or any other action you want when learning mode is started from Home Assistant.  
+  **Note:** ESPHome automatically dumps received IR/RF codes to the logs when `dump: all` is set. You can view these codes in the ESPHome logs and use them in Home Assistant.
+
+> Adjust the `pin` numbers and actions to match your hardware.  
+> For advanced protocol support, see the [ESPHome Remote Transmitter docs](https://esphome.io/components/remote_transmitter.html).
+
+#### Example Home Assistant Configuration
 
 ```yaml
 remote:
-    # ESPHOME
   - platform: universal_remote
     name: "Living Room Remote"
     backend: esphome
     device: livingroom_ir
-    
-    # TASMOTA
-  - platform: universal_remote
-    name: "Bedroom Remote"
-    backend: tasmota
-    mqtt_topic: Esp8266_universal_remote
-    led_entity_id: light.bedroom_remote_led
 ```
 
-### Configuration Options
+---
 
-| Option        | Required | Description                                                                 |
-|---------------|----------|-----------------------------------------------------------------------------|
-| `platform`    | Yes      | Must be `universal_remote`                                                  |
-| `name`        | Yes      | Friendly name for your remote                                               |
-| `backend`     | Yes      | Either `esphome` or `tasmota`                                               |
-| `device`      | Yes\*    | ESPHome device name (required for ESPHome backend)                          |
-| `mqtt_topic`  | Yes\*    | MQTT topic for Tasmota device (required for Tasmota backend)                |
-| `led_entity_id`| No      | Optional LED entity to indicate remote status (for Tasmota backend only)    |
+### 2. Tasmota Configuration
 
-\* Only one of `device` or `mqtt_topic` is required, depending on the backend.
+Tasmota-based devices communicate via MQTT and can send/receive IR or RF commands.  
+To use a Tasmota device as a universal remote in Home Assistant, follow these steps:
 
-### How to Find Your Tasmota MQTT Topic
+#### How to Find Your Tasmota MQTT Topic
 
-To control your Tasmota device, you need to know its **MQTT Topic**.  
-You can find this in the Tasmota web interface:
+To control your Tasmota device, you need to know its **MQTT Topic**:
 
 1. Open your Tasmota device’s web UI in your browser.
 2. Go to **Information**.
@@ -97,12 +151,68 @@ In this example, the MQTT Topic is `Esp8266_universal_remote`.
 Use this value in your configuration:
 
 ```yaml
+remote:
   - platform: universal_remote
     name: "Bedroom Remote"
     backend: tasmota
     mqtt_topic: Esp8266_universal_remote
     led_entity_id: light.bedroom_remote_led  # Optional: entity to turn on during learning    
 ```
+
+---
+
+#### Using a Tasmota GPIO LED as a Learning Indicator
+
+Tasmota does not expose onboard LEDs as `light` entities in Home Assistant by default.  
+To use an onboard LED (or any GPIO-connected LED) as a learning indicator with this integration, you should configure that GPIO as a **Relay** in Tasmota. This will expose it as a `switch` entity in Home Assistant, which the integration can control during learning mode.
+
+##### How to Configure
+
+1. **Open your Tasmota device’s web UI.**
+2. Go to **Configuration → Configure Module**.
+3. Find the GPIO pin connected to your LED (for example, GPIO5).
+4. Set its function to **Relay** (e.g., `Relay1`, `Relay2`, etc.).
+5. Click **Save** and let the device restart.
+
+This will expose the LED as a `switch` entity in Home Assistant (e.g., `switch.yourdevice_relay`).
+
+##### Example Home Assistant Configuration
+
+```yaml
+remote:
+  - platform: universal_remote
+    name: "Bedroom Remote"
+    backend: tasmota
+    mqtt_topic: Esp8266_universal_remote
+    led_entity_id: switch.bedroom_remote_relay  # Use the switch entity for the LED indicator
+```
+
+##### How It Works
+
+- When you start learning mode, the integration will turn on the `switch` (LED on).
+- When learning ends, the integration will turn off the `switch` (LED off).
+
+**Tip:**  
+You can still use other relays for actual relays (e.g., controlling power), just pick a free relay number for your LED.
+
+> If you want to use a `light` entity instead, you can use a template light in Home Assistant that wraps the relay switch.
+
+**This method ensures your LED can be controlled by Home Assistant and used as a learning indicator.**
+
+---
+
+### Configuration Options
+
+| Option         | Required | Description                                                                 |
+|----------------|----------|-----------------------------------------------------------------------------|
+| `platform`     | Yes      | Must be `universal_remote`                                                  |
+| `name`         | Yes      | Friendly name for your remote                                               |
+| `backend`      | Yes      | Either `esphome` or `tasmota`                                               |
+| `device`       | Yes\*    | ESPHome device name (required for ESPHome backend)                          |
+| `mqtt_topic`   | Yes\*    | MQTT topic for Tasmota device (required for Tasmota backend)                |
+| `led_entity_id`| No       | Optional LED entity to indicate remote status (for learning indicator)      |
+
+\* Only one of `device` or `mqtt_topic` is required, depending on the backend.
 
 ---
 
@@ -212,68 +322,6 @@ data:
 
 ---
 
-## Example ESPHome YAML Snippet
-
-Below is a **generic example** for ESPHome that allows sending and learning any IR or RF code, without requiring a specific protocol.  
-This approach works with most IR/RF devices and is compatible with the universal remote integration.
-
-```yaml
-remote_transmitter:
-  pin: GPIOXX
-  carrier_duty_percent: 50%
-
-remote_receiver:
-  pin: GPIOXX
-  dump: all
-  buffer_size: 4kb
-
-output:
-  - platform: gpio
-    pin: GPIOXX
-    id: status_led_output
-
-light:
-  - platform: binary
-    name: "Status LED"
-    output: status_led_output
-    id: led_indicator
-
-api:
-  services:
-    - service: learning_started
-      then:
-        - light.turn_on: led_indicator
-    - service: learning_ended
-      then:
-        - light.turn_off: led_indicator
-    - service: send
-      variables:
-        command: string
-      then:
-        - remote_transmitter.transmit_raw:
-            code: !lambda |-
-              std::vector<uint32_t> out;
-              for (auto s : split(command, ',')) {
-                out.push_back(parse_number<uint32_t>(s));
-              }
-              return out;
-    - service: learn
-      then:
-        # Optionally, you can add actions here if needed when learning starts
-        - logger.log: "Learning mode started"
-```
-
-- **Sending:**  
-  The `send` service expects a comma-separated string of raw timings (as learned or provided by your integration).
-- **Learning:**  
-  The `learn` service can be used to trigger an indicator (like an LED) or any other action you want when learning mode is started from Home Assistant.  
-  **Note:** ESPHome automatically dumps received IR/RF codes to the logs when `dump: all` is set. You can view these codes in the ESPHome logs and use them in Home Assistant.
-
-> Adjust the `pin` numbers and actions to match your hardware.  
-> For advanced protocol support, see the [ESPHome Remote Transmitter docs](https://esphome.io/components/remote_transmitter.html).
-
----
-
 ## Questions?
 
-Open an issue on GitHub or ask in the [Home Assistant Community](https://community.home-assistant.io/).
+Open an issue on [GitHub issue tracker](https://github.com/omaramin-2000/HA_universal_remote/issues) or ask in the [Home Assistant Community](https://community.home-assistant.io/)
