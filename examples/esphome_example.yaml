@@ -1,0 +1,177 @@
+esphome:
+  name: universal_remote
+  friendly_name: 'Universal Remote'
+
+esp32:
+  board: esp32dev
+  framework:
+    type: arduino
+  variant: esp32
+
+# Enable Wifi
+wifi:
+  ssid: YOUR_WIFI_SSID
+  password: YOUR_WIFI_PASSWORD
+  # Enable fallback hotspot (captive portal) in case wifi connection fails
+  ap:
+    ssid: ESP32-universal-remote
+    ap_timeout: 1min
+
+  on_connect:
+    - delay: 5s  # Allows time for BLE provisioning results to be sent
+    - ble.disable:
+  on_disconnect:
+    - ble.enable:
+
+captive_portal: 
+
+# Enable Bluetooth
+esp32_ble_tracker:
+  id: ble_tracker
+
+esp32_ble:
+  name: universal-remote
+  
+esp32_improv:
+  authorizer: none
+
+output:
+  - platform: gpio
+    pin: GPIO12
+    id: status_led_output
+
+light:
+  - platform: binary
+    name: "Status LED"
+    output: status_led_output
+    id: led_indicator
+
+# Enable Home Assistant API
+api:
+  services:
+    - service: learning_started
+      then:
+        - light.turn_on: led_indicator
+    - service: learning_ended
+      then:
+        - light.turn_off: led_indicator
+    - service: send
+      variables:
+        command: string
+      then:
+        - remote_transmitter.transmit_raw:
+            code: !lambda |-
+              std::vector<int> out;
+              size_t last = 0, next = 0;
+              while ((next = command.find(',', last)) != std::string::npos) {
+                out.push_back(atoi(command.substr(last, next - last).c_str()));
+                last = next + 1;
+              }
+              out.push_back(atoi(command.substr(last).c_str()));
+              return out;
+    - service: learn
+      variables:
+        command_type: string        
+      then:
+        # Optionally, you can add actions here if needed when learning starts
+        - logger.log: "Learning mode started"
+
+# Enable OTA Updates
+ota:
+  - platform: esphome
+
+# GPIO2 Led
+status_led:
+  pin:
+    number: GPIO2
+    inverted: true
+
+# Global to hold the last code
+globals:
+  - id: ir_received
+    type: std::string
+    restore_value: no
+    initial_value: ""
+
+# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_ir_code)
+text_sensor:
+  - platform: template
+    id: last_code
+    name: "Last Code"
+    lambda: |-
+      // simply return the global; this is what Home Assistant will display
+      return id(ir_received);
+    update_interval: 5s
+
+# Enable IR receiver
+remote_receiver:
+  pin:
+    number: GPIO35 # TSOP 1738 IR Receiver
+    inverted: true
+  dump: all    # you can leave this or change to 'raw' only
+  filter: 50µs            # ignore very short spikes
+  # idle: 4ms               # wait up to 50 ms silence before ending capture
+  # tolerance: 50%
+  # buffer_size: 4kb         # ensure space for the whole frame
+  on_raw:
+    then:
+      - lambda: |-
+          std::string out;
+          for (size_t i = 0; i < x.size(); i++) {
+            if (i != 0) out += ",";
+            out += to_string(x[i]);
+          }
+          id(ir_received) = out;
+          id(last_code).publish_state(out);
+
+# Enable IR transmitter
+remote_transmitter:
+  pin: GPIO23
+  carrier_duty_percent: 50%
+
+# Enable Web Server
+web_server:
+  port: 80
+  version: 3
+  local: true
+
+# Enable logging
+logger:
+  level: VERBOSE
+
+button:
+  - platform: factory_reset
+    name: "Factory Reset Button"
+    id: factory_reset_button
+
+binary_sensor:
+  - platform: gpio
+    pin:
+      number: GPIO0
+      mode: INPUT_PULLUP
+      inverted: true
+    name: "Onboard Button"
+    id: onboard_button
+    filters:
+      - delayed_on: 10ms
+    on_multi_click:
+      # Double press
+      - timing:
+          - ON for at most 0.5s
+          - OFF for at most 0.3s
+          - ON for at most 0.5s
+          - OFF for at least 0.2s
+        then:
+          - logger.log: "Double press detected"
+      # Long press
+      - timing:
+          - ON for at least 10s
+        then:
+          - logger.log: "Onboard button long pressed, performing factory reset"
+          - button.press: factory_reset_button
+      # Single short press
+      - timing:
+          - ON for at most 1s
+          - OFF for at least 0.2s
+        then:
+          - logger.log: "Onboard button pressed"
