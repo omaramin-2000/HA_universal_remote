@@ -93,7 +93,7 @@ globals:
     restore_value: no
     initial_value: ""
 
-# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_ir_code)
+# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_code)
 text_sensor:
   - platform: template
     id: last_code
