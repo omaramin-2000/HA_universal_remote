@@ -222,7 +222,11 @@ class UniversalRemote(RemoteEntity):
                 @callback
                 def _state_listener(event):
                     new_state = event.data.get("new_state")
-                    if new_state and new_state.entity_id == sensor_entity and new_state.state and "," in new_state.state:
+                    if not new_state or not new_state.state:
+                        return
+
+                    # Lowercase and strip spacing to normalize comparison
+                    if new_state.entity_id.lower() == sensor_entity.lower() and "," in new_state.state:
                         if not fut.done():
                             fut.set_result(new_state.state)
 
