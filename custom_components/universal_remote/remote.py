@@ -11,7 +11,6 @@ from homeassistant.components.remote import (
     ATTR_DEVICE,
     ATTR_NUM_REPEATS,
     DEFAULT_DELAY_SECS,
-    # DOMAIN as RM_DOMAIN,
     SERVICE_DELETE_COMMAND,
     SERVICE_LEARN_COMMAND,
     SERVICE_SEND_COMMAND,
@@ -49,7 +48,8 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
         vol.Required(CONF_BACKEND): vol.In(["esphome", "tasmota"]),
         vol.Optional(CONF_DEVICE): cv.string,
         vol.Optional(CONF_MQTT_TOPIC): cv.string,
-        vol.Optional("led_entity_id"): cv.string,  
+        vol.Optional("led_entity_id"): cv.string,
+        vol.Optional("text_sensor_entity_id"): cv.string, 
     }
 )
 
@@ -61,7 +61,8 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
     backend = config[CONF_BACKEND]
     device = config.get(CONF_DEVICE)
     mqtt_topic = config.get(CONF_MQTT_TOPIC)
-    led_entity_id = config.get("led_entity_id")  # <-- add this line
+    led_entity_id = config.get("led_entity_id")
+    text_sensor_entity_id = config.get("text_sensor_entity_id")  
 
     if backend == "esphome" and not device:
         _LOGGER.error("device must be set when backend is esphome")
@@ -70,18 +71,19 @@ async def async_setup_platform(hass, config, async_add_entities, discovery_info=
         _LOGGER.error("mqtt_topic must be set when backend is tasmota")
         return
 
-    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic, led_entity_id)])
+    async_add_entities([UniversalRemote(hass, name, backend, device, mqtt_topic, led_entity_id, text_sensor_entity_id)])
 
 class UniversalRemote(RemoteEntity):
     """Universal Remote entity."""
 
-    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id=None):
+    def __init__(self, hass, name, backend, device, mqtt_topic, led_entity_id, text_sensor_entity_id=None):
         self.hass = hass
         self._attr_name = name
         self._backend = backend
         self._device = device
         self._mqtt_topic = mqtt_topic
-        self._led_entity_id = led_entity_id  # <-- add this line
+        self._led_entity_id = led_entity_id
+        self._text_sensor_entity_id = text_sensor_entity_id  
         self._attr_is_on = True
         self._attr_supported_features = (
             RemoteEntityFeature.LEARN_COMMAND
@@ -212,13 +214,19 @@ class UniversalRemote(RemoteEntity):
                 event_type = f"esphome.{self._device}_{command_type}_learned"
                 event_future = asyncio.Future()
 
-                def _event_listener(event):
-                    nonlocal learned_code
-                    learned_code = event.data.get("code")
-                    if learned_code and not event_future.done():
-                        event_future.set_result(learned_code)
+                # Use configured text_sensor_entity_id or default sensor based on device name
+                sensor_entity = self._text_sensor_entity_id or f"sensor.{self._device}_last_code"
 
-                remove_listener = self.hass.bus.async_listen_once(event_type, _event_listener)
+                fut = asyncio.get_event_loop().create_future()
+
+                @callback
+                def _state_listener(event):
+                    new_state = event.data.get("new_state")
+                    if new_state and new_state.entity_id == sensor_entity and new_state.state and "," in new_state.state:
+                        if not fut.done():
+                            fut.set_result(new_state.state)
+
+                remove_listener = self.hass.bus.async_listen("state_changed", _state_listener)
 
                 # Signal ESPHome that learning has started
                 await self.hass.services.async_call(
