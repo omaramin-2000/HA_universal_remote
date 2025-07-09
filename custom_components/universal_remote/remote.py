@@ -211,7 +211,6 @@ class UniversalRemote(RemoteEntity):
                 data = {}
                 if command_type:
                     data["command_type"] = command_type
-                event_type = f"esphome.{self._device}_{command_type}_learned"
                 event_future = asyncio.Future()
 
                 # Use configured text_sensor_entity_id or default sensor based on device name
@@ -219,14 +218,20 @@ class UniversalRemote(RemoteEntity):
 
                 fut = asyncio.get_event_loop().create_future()
 
+                # Get previous state to ensure we capture a new update only
+                previous_state = self.hass.states.get(sensor_entity)
+                previous_value = previous_state.state if previous_state else None
+
                 @callback
                 def _state_listener(event):
+                    if event.data.get("entity_id") != sensor_entity:
+                        return
+
                     new_state = event.data.get("new_state")
                     if not new_state or not new_state.state:
                         return
 
-                    # Lowercase and strip spacing to normalize comparison
-                    if new_state.entity_id.lower() == sensor_entity.lower() and "," in new_state.state:
+                    if new_state.state != previous_value and "," in new_state.state:
                         if not fut.done():
                             fut.set_result(new_state.state)
 
