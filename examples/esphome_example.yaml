@@ -88,7 +88,7 @@ status_led:
 
 # Global to hold the last code
 globals:
-  - id: ir_received
+  - id: remote_received
     type: std::string
     restore_value: no
     initial_value: ""
@@ -100,7 +100,7 @@ text_sensor:
     name: "Last Code"
     lambda: |-
       // simply return the global; this is what Home Assistant will display
-      return id(ir_received);
+      return id(remote_received);
     update_interval: 5s
 
 # Enable IR receiver
@@ -121,7 +121,7 @@ remote_receiver:
             if (i != 0) out += ",";
             out += to_string(x[i]);
           }
-          id(ir_received) = out;
+          id(remote_received) = out;
           id(last_code).publish_state(out);
 
 # Enable IR transmitter
