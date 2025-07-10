@@ -64,11 +64,37 @@ This approach works with most IR/RF devices and is compatible with the universal
 remote_transmitter:
   pin: GPIOXX
   carrier_duty_percent: 50%
+# Global to hold the last code
+globals:
+  - id: ir_received
+    type: std::string
+    restore_value: no
+    initial_value: ""
+
+# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_code)
+text_sensor:
+  - platform: template
+    id: last_code
+    name: "Last Code"
+    lambda: |-
+      // simply return the global; this is what Home Assistant will display
+      return id(ir_received);
+    update_interval: 5s
 
 remote_receiver:
   pin: GPIOXX
   dump: all
   buffer_size: 4kb
+  on_raw:
+    then:
+      - lambda: |-
+          std::string out;
+          for (size_t i = 0; i < x.size(); i++) {
+            if (i != 0) out += ",";
+            out += to_string(x[i]);
+          }
+          id(ir_received) = out;
+          id(last_code).publish_state(out);
 
 output:
   - platform: gpio
@@ -301,7 +327,8 @@ data:
   - The integration automatically detects whether to use `IRSend` or `RfSend` based on your command payload.
   - You do **not** need to specify the topic; just provide the correct JSON or raw string.
 
-- **ESPHome:**  
+- **ESPHome:**
+  - ESPHome functionality is still in development.
   - You must define the corresponding `send` and `learn` services in your ESPHome YAML.
   - The integration passes the command string to ESPHome; your ESPHome config must know how to interpret it.
 
