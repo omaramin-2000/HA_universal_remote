@@ -64,6 +64,7 @@ This approach works with most IR/RF devices and is compatible with the universal
 remote_transmitter:
   pin: GPIOXX
   carrier_duty_percent: 50%
+
 # Global to hold the last code
 globals:
   - id: ir_received
