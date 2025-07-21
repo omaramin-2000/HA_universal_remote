@@ -208,48 +208,24 @@ class UniversalRemote(RemoteEntity):
             learned_code = None
 
             if self._backend == "esphome":
-                data = {}
-                if command_type:
-                    data["command_type"] = command_type
-                event_future = asyncio.Future()
-
-                # Use configured text_sensor_entity_id or default sensor based on device name
-                sensor_entity = self._text_sensor_entity_id or f"sensor.{self._device}_last_code"
-
-                fut = asyncio.get_event_loop().create_future()
-
-                # Get previous state to ensure we capture a new update only
-                previous_state = self.hass.states.get(sensor_entity)
-                previous_value = previous_state.state if previous_state else None
+                # Prepare to catch the next IR event
+                event_type = f"esphome.{self._device}_ir_received"
+                future = asyncio.get_running_loop().create_future()
 
                 @callback
-                def _state_listener(event):
-                    if event.data.get("entity_id") != sensor_entity:
-                        return
+                def _ir_event_listener(event):
+                    code = event.data.get("code")
+                    if code and not future.done():
+                        future.set_result(code)
 
-                    new_state = event.data.get("new_state")
-                    if not new_state or not new_state.state:
-                        return
-
-                    if new_state.state != previous_value and "," in new_state.state:
-                        if not fut.done():
-                            fut.set_result(new_state.state)
-
-                remove_listener = self.hass.bus.async_listen("state_changed", _state_listener)
+                remove_listener = self.hass.bus.async_listen_once(event_type, _ir_event_listener)
 
                 # Signal ESPHome that learning has started
                 await self.hass.services.async_call(
-                    "esphome",
-                    f"{self._device}_learning_started",
-                    {},
-                    blocking=True,
+                    "esphome", f"{self._device}_learning_started", {}, blocking=True
                 )
-
                 await self.hass.services.async_call(
-                    "esphome",
-                    f"{self._device}_learn",
-                    data,
-                    blocking=True,
+                    "esphome", f"{self._device}_learn", {"command_type": command_type}, blocking=True
                 )
                 try:
                     learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
