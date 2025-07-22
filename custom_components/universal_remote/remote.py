@@ -218,9 +218,11 @@ class UniversalRemote(RemoteEntity):
                     if code and not event_future.done():
                         event_future.set_result(code)
 
-                remove_listener = self.hass.bus.async_listen_once(event_type, event_listener)
-
+                remove_listener = None
                 try:
+                    # Register the listener
+                    remove_listener = self.hass.bus.async_listen_once(event_type, event_listener)
+
                     # Signal ESPHome that learning has started
                     await self.hass.services.async_call(
                         "esphome", f"{self._device}_learning_started", {}, blocking=True
@@ -244,8 +246,9 @@ class UniversalRemote(RemoteEntity):
                     continue
 
                 finally:
-                    # Ensure the listener is removed even if an exception occurs
-                    remove_listener()
+                    # Ensure the listener is removed only if it was registered
+                    if remove_listener:
+                        remove_listener()
                     await self.hass.services.async_call(
                         "esphome",
                         f"{self._device}_learning_ended",
