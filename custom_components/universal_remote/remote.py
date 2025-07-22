@@ -210,8 +210,7 @@ class UniversalRemote(RemoteEntity):
             if self._backend == "esphome":
                 # Prepare to catch the next IR event
                 event_type = f"esphome.{self._device}_ir_received"
-                # Create the future here…
-                event_future = asyncio.Future()
+                event_future = asyncio.get_running_loop().create_future()  # Ensure event_future is created properly
 
                 @callback
                 def event_listener(event):
@@ -221,16 +220,19 @@ class UniversalRemote(RemoteEntity):
 
                 remove_listener = self.hass.bus.async_listen_once(event_type, event_listener)
 
-                # Signal ESPHome that learning has started
-                await self.hass.services.async_call(
-                    "esphome", f"{self._device}_learning_started", {}, blocking=True
-                )
-                await self.hass.services.async_call(
-                    "esphome", f"{self._device}_learn", {"command_type": command_type}, blocking=True
-                )
                 try:
+                    # Signal ESPHome that learning has started
+                    await self.hass.services.async_call(
+                        "esphome", f"{self._device}_learning_started", {}, blocking=True
+                    )
+                    await self.hass.services.async_call(
+                        "esphome", f"{self._device}_learn", {"command_type": command_type}, blocking=True
+                    )
+
+                    # Wait for the event to be set
                     learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
                     _LOGGER.debug("Learned code from ESPHome: %s", learned_code)
+
                 except asyncio.TimeoutError:
                     _LOGGER.error("Timeout waiting for ESPHome learned code event.")
                     persistent_notification.async_create(
@@ -240,7 +242,9 @@ class UniversalRemote(RemoteEntity):
                         notification_id=notification_id,
                     )
                     continue
+
                 finally:
+                    # Ensure the listener is removed even if an exception occurs
                     remove_listener()
                     await self.hass.services.async_call(
                         "esphome",
