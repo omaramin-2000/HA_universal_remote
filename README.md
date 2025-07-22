@@ -65,37 +65,23 @@ remote_transmitter:
   pin: GPIOXX
   carrier_duty_percent: 50%
 
-# Global to hold the last code
-globals:
-  - id: ir_received
-    type: std::string
-    restore_value: no
-    initial_value: ""
-
-# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_code)
-text_sensor:
-  - platform: template
-    id: last_code
-    name: "Last Code"
-    lambda: |-
-      // simply return the global; this is what Home Assistant will display
-      return id(ir_received);
-    update_interval: 5s
-
 remote_receiver:
   pin: GPIOXX
   dump: all
   buffer_size: 4kb
   on_raw:
     then:
-      - lambda: |-
-          std::string out;
-          for (size_t i = 0; i < x.size(); i++) {
-            if (i != 0) out += ",";
-            out += to_string(x[i]);
-          }
-          id(ir_received) = out;
-          id(last_code).publish_state(out);
+      - homeassistant.event:
+          event: esphome.universal_remote_ir_received
+          data:
+            code: !lambda |-
+              // Build a comma‑separated list of the raw timings
+              std::string out;
+              for (size_t i = 0; i < x.size(); i++) {
+                if (i != 0) out += ",";
+                out += to_string(x[i]);
+              }
+              return out;
 
 output:
   - platform: gpio
