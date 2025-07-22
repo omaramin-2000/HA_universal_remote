@@ -5,7 +5,7 @@ esphome:
 esp32:
   board: esp32dev
   framework:
-    type: arduino
+    type: esp-idf
   variant: esp32
 
 # Enable Wifi
@@ -61,7 +61,7 @@ api:
       then:
         - remote_transmitter.transmit_raw:
             code: !lambda |-
-              std::vector<int> out;
+              std::vector<long> out;
               size_t last = 0, next = 0;
               while ((next = command.find(',', last)) != std::string::npos) {
                 out.push_back(atoi(command.substr(last, next - last).c_str()));
@@ -85,24 +85,7 @@ status_led:
   pin:
     number: GPIO2
     inverted: true
-
-# Global to hold the last code
-globals:
-  - id: remote_received
-    type: std::string
-    restore_value: no
-    initial_value: ""
-
-# Expose the last code as a text sensor in ESPHome (and thus HA sees it as sensor.last_code)
-text_sensor:
-  - platform: template
-    id: last_code
-    name: "Last Code"
-    lambda: |-
-      // simply return the global; this is what Home Assistant will display
-      return id(remote_received);
-    update_interval: 5s
-
+    
 # Enable IR receiver
 remote_receiver:
   pin:
@@ -115,14 +98,17 @@ remote_receiver:
   # buffer_size: 4kb         # ensure space for the whole frame
   on_raw:
     then:
-      - lambda: |-
-          std::string out;
-          for (size_t i = 0; i < x.size(); i++) {
-            if (i != 0) out += ",";
-            out += to_string(x[i]);
-          }
-          id(remote_received) = out;
-          id(last_code).publish_state(out);
+      - homeassistant.event:
+          event: esphome.universal_remote_ir_received
+          data:
+            code: !lambda |-
+              // Build a comma‑separated list of the raw timings
+              std::string out;
+              for (size_t i = 0; i < x.size(); i++) {
+                if (i != 0) out += ",";
+                out += to_string(x[i]);
+              }
+              return out;
 
 # Enable IR transmitter
 remote_transmitter:
