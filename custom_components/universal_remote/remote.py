@@ -210,15 +210,16 @@ class UniversalRemote(RemoteEntity):
             if self._backend == "esphome":
                 # Prepare to catch the next IR event
                 event_type = f"esphome.{self._device}_ir_received"
-                event_future = asyncio.get_running_loop().create_future()
+                # Create the future here…
+                event_future = asyncio.Future()
 
                 @callback
-                def _ir_event_listener(event):
+                def event_listener(event):
                     code = event.data.get("code")
                     if code and not event_future.done():
                         event_future.set_result(code)
 
-                remove_listener = self.hass.bus.async_listen_once(event_type, _ir_event_listener)
+                remove_listener = self.hass.bus.async_listen_once(event_type, event_listener)
 
                 # Signal ESPHome that learning has started
                 await self.hass.services.async_call(
