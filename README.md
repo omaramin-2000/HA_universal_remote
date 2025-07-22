@@ -108,10 +108,13 @@ api:
       then:
         - remote_transmitter.transmit_raw:
             code: !lambda |-
-              std::vector<uint32_t> out;
-              for (auto s : split(command, ',')) {
-                out.push_back(parse_number<uint32_t>(s));
+              std::vector<long> out;
+              size_t last = 0, next = 0;
+              while ((next = command.find(',', last)) != std::string::npos) {
+                out.push_back(atoi(command.substr(last, next - last).c_str()));
+                last = next + 1;
               }
+              out.push_back(atoi(command.substr(last).c_str()));
               return out;
     - service: learn
       then:
