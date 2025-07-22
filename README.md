@@ -122,6 +122,8 @@ api:
         - logger.log: "Learning mode started"
 ```
 
+[Full example configuration](https://github.com/omaramin-2000/HA_universal_remote/blob/main/examples/esphome_example.yaml)
+
 - **Sending:**  
   The `send` service expects a comma-separated string of raw timings (as learned or provided by your integration).
 - **Learning:**  
