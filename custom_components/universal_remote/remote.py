@@ -20,6 +20,7 @@ from homeassistant.components.remote import (
 )
 
 from homeassistant.const import CONF_NAME
+from homeassistant.const import ATTR_COMMAND, STATE_OFF
 import homeassistant.helpers.config_validation as cv
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
