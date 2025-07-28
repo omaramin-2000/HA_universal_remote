@@ -55,6 +55,37 @@ PLATFORM_SCHEMA = PLATFORM_SCHEMA.extend(
 
 LEARNING_TIMEOUT = timedelta(seconds=60)
 
+COMMAND_TYPE_IR = "ir"
+COMMAND_TYPE_RF = "rf"
+COMMAND_TYPES = [COMMAND_TYPE_IR, COMMAND_TYPE_RF]
+
+COMMAND_SCHEMA = vol.Schema(
+    {
+        vol.Required(ATTR_COMMAND): vol.All(
+            cv.ensure_list, [vol.All(cv.string, vol.Length(min=1))], vol.Length(min=1)
+        ),
+    },
+    extra=vol.ALLOW_EXTRA,
+)
+
+SERVICE_SEND_SCHEMA = COMMAND_SCHEMA.extend(
+    {
+        vol.Optional(ATTR_DELAY_SECS, default=DEFAULT_DELAY_SECS): vol.Coerce(float),
+    }
+)
+
+SERVICE_LEARN_SCHEMA = COMMAND_SCHEMA.extend(
+    {
+        vol.Required(ATTR_DEVICE): vol.All(cv.string, vol.Length(min=1)),
+        vol.Optional(ATTR_COMMAND_TYPE, default=COMMAND_TYPE_IR): vol.In(COMMAND_TYPES),
+        vol.Optional(ATTR_ALTERNATIVE, default=False): cv.boolean,
+    }
+)
+
+SERVICE_DELETE_SCHEMA = COMMAND_SCHEMA.extend(
+    {vol.Required(ATTR_DEVICE): vol.All(cv.string, vol.Length(min=1))}
+)
+
 async def async_setup_platform(hass, config, async_add_entities, discovery_info=None):
     """Set up the Universal Remote platform."""
     name = config[CONF_NAME]
@@ -326,3 +357,34 @@ class UniversalRemote(RemoteEntity):
     async def async_update(self):
         # Optionally implement: update state from device
         pass
+
+    async def async_delete_command(self, command=None, device=None, **kwargs):
+        """Delete one or more commands from the storage."""
+        if not device:
+            _LOGGER.error("No device name provided for deleting commands.")
+            return
+        if not command:
+            _LOGGER.error("No command name(s) provided for deletion.")
+            return
+
+        # Support both single string and list of commands
+        if isinstance(command, str):
+            command_names = [command]
+        else:
+            command_names = list(command)
+
+        # Load the storage file
+        codes = await self._store.async_load() or {}
+        device_codes = codes.get(device, {})
+
+        # Delete the specified commands
+        for cmd_name in command_names:
+            if cmd_name in device_codes:
+                del device_codes[cmd_name]
+                _LOGGER.info("Deleted command '%s' for device '%s'", cmd_name, device)
+            else:
+                _LOGGER.warning("Command '%s' not found for device '%s'", cmd_name, device)
+
+        # Save the updated codes back to storage
+        codes[device] = device_codes
+        await self._store.async_save(codes)
