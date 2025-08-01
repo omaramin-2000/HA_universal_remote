@@ -149,6 +149,13 @@ class UniversalRemote(RemoteEntity):
             delay_secs = kwargs.get("delay_secs", 0)
             hold_secs = kwargs.get("hold_secs", 0)
             for cmd in commands_to_send:
+                # Ensure the command is a string (comma-separated raw timings)
+                if isinstance(cmd, list):
+                    cmd = ",".join(map(str, cmd))
+                elif not isinstance(cmd, str):
+                    _LOGGER.error("Invalid command format for ESPHome: %s", cmd)
+                    continue
+
                 for i in range(num_repeats):
                     await self.hass.services.async_call(
                         "esphome",
@@ -156,7 +163,7 @@ class UniversalRemote(RemoteEntity):
                         {"command": cmd},
                         blocking=True,
                     )
-                    _LOGGER.debug("Sent '%s' to ESPHome device %s", cmd, self._device)
+                    _LOGGER.debug("Sent raw command '%s' to ESPHome device %s", cmd, self._device)
                     # Hold the button if requested (simulate long press)
                     if hold_secs and hold_secs > 0:
                         await asyncio.sleep(hold_secs)
