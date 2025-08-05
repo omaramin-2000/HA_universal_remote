@@ -135,15 +135,19 @@ class UniversalRemote(RemoteEntity):
             return
         if not isinstance(command, list):
             command = [command]
+    
+        # Load the stored commands from the JSON file
         codes = await self._store.async_load() or {}
         device_codes = codes.get(device, {})
         commands_to_send = []
+
         for cmd in command:
-            # If the command is a known name, use the stored code
+            # If the command is a known name, use the stored raw code
             if cmd in device_codes:
                 commands_to_send.append(device_codes[cmd])
             else:
-                commands_to_send.append(cmd)
+                commands_to_send.append(cmd)  # Assume it's already a raw code
+
         if self._backend == "esphome":
             num_repeats = kwargs.get("num_repeats", 1)
             delay_secs = kwargs.get("delay_secs", 0)
@@ -157,10 +161,11 @@ class UniversalRemote(RemoteEntity):
                     continue
 
                 for i in range(num_repeats):
+                    # Set the state of the text component in ESPHome
                     await self.hass.services.async_call(
                         "esphome",
-                        f"{self._device}_send",
-                        {"command": cmd},
+                        f"{self._device}_set_text",
+                        {"id": "send_cmd", "state": cmd},
                         blocking=True,
                     )
                     _LOGGER.debug("Sent raw command '%s' to ESPHome device %s", cmd, self._device)
