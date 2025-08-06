@@ -152,11 +152,16 @@ class UniversalRemote(RemoteEntity):
             num_repeats = kwargs.get("num_repeats", 1)
             delay_secs = kwargs.get("delay_secs", 0)
             hold_secs = kwargs.get("hold_secs", 0)
+
             for cmd in commands_to_send:
-                # Ensure the command is a string (comma-separated raw timings)
-                if isinstance(cmd, list):
-                    cmd = ",".join(map(str, cmd))
-                elif not isinstance(cmd, str):
+                # Ensure the command is a list of integers
+                if isinstance(cmd, str):
+                    try:
+                        cmd = [int(x) for x in cmd.split(",")]
+                    except ValueError:
+                        _LOGGER.error("Invalid command format for ESPHome: %s", cmd)
+                        continue
+                elif not isinstance(cmd, list):
                     _LOGGER.error("Invalid command format for ESPHome: %s", cmd)
                     continue
 
@@ -172,6 +177,7 @@ class UniversalRemote(RemoteEntity):
                     # Hold the button if requested (simulate long press)
                     if hold_secs and hold_secs > 0:
                         await asyncio.sleep(hold_secs)
+
                     # Delay between repeats, except after the last one
                     if i < num_repeats - 1 and delay_secs:
                         await asyncio.sleep(delay_secs)
