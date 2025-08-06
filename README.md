@@ -104,18 +104,11 @@ api:
         - light.turn_off: led_indicator
     - service: send
       variables:
-        command: string
+        command: int[] # ← use int[] for a list of integers
       then:
         - remote_transmitter.transmit_raw:
             code: !lambda |-
-              std::vector<long> out;
-              size_t last = 0, next = 0;
-              while ((next = command.find(',', last)) != std::string::npos) {
-                out.push_back(atoi(command.substr(last, next - last).c_str()));
-                last = next + 1;
-              }
-              out.push_back(atoi(command.substr(last).c_str()));
-              return out;
+              return command;
     - service: learn
       then:
         # Optionally, you can add actions here if needed when learning starts
