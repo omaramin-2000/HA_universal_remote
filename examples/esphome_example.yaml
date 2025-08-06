@@ -55,20 +55,13 @@ api:
     - service: learning_ended
       then:
         - light.turn_off: led_indicator
-    # - service: send
-    #   variables:
-    #     command: string
-    #   then:
-    #     - remote_transmitter.transmit_raw:
-    #         code: !lambda |-
-    #           std::vector<long> out;
-    #           size_t last = 0, next = 0;
-    #           while ((next = command.find(',', last)) != std::string::npos) {
-    #             out.push_back(atoi(command.substr(last, next - last).c_str()));
-    #             last = next + 1;
-    #           }
-    #           out.push_back(atoi(command.substr(last).c_str()));
-    #           return out;
+    - service: send
+      variables:
+        command: std::vector<uint32_t>
+      then:
+        - remote_transmitter.transmit_raw:
+            code: !lambda |-
+              return command;
     - service: learn
       variables:
         command_type: string        
@@ -121,23 +114,24 @@ remote_transmitter:
   pin: GPIO23
   carrier_duty_percent: 50%
 
-  - platform: template
-    name: "Send Command"
-    id: send_cmd
-    optimistic: true
-    mode: text
-    on_value:
-      then:
-        - remote_transmitter.transmit_raw:
-            code: !lambda |-
-              std::vector<uint32_t> out;
-              size_t last = 0, next = 0;
-              while ((next = x.find(',', last)) != std::string::npos) {
-                out.push_back(static_cast<uint32_t>(atoi(x.substr(last, next - last).c_str())));
-                last = next + 1;
-              }
-              out.push_back(static_cast<uint32_t>(atoi(x.substr(last).c_str())));
-              return out;
+# text:
+#   - platform: template
+#     name: "Send Command"
+#     id: send_cmd
+#     optimistic: true
+#     mode: text
+#     on_value:
+#       then:
+#         - remote_transmitter.transmit_raw:
+#             code: !lambda |-
+#               std::vector<long> out;
+#               size_t last = 0, next = 0;
+#               while ((next = x.find(',', last)) != std::string::npos) {
+#                 out.push_back(atoi(x.substr(last, next - last).c_str()));
+#                 last = next + 1;
+#               }
+#               out.push_back(atoi(x.substr(last).c_str()));
+#               return out;
 
 # Enable Web Server
 web_server:

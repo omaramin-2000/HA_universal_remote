@@ -161,11 +161,11 @@ class UniversalRemote(RemoteEntity):
                     continue
 
                 for i in range(num_repeats):
-                    # Set the state of the text component in ESPHome
+                    # Call the ESPHome service with the list of integers
                     await self.hass.services.async_call(
                         "esphome",
-                        f"{self._device}_set_text",
-                        {"id": "send_cmd", "state": cmd},
+                        f"{self._device}_send",
+                        {"command": cmd},
                         blocking=True,
                     )
                     _LOGGER.debug("Sent raw command '%s' to ESPHome device %s", cmd, self._device)
