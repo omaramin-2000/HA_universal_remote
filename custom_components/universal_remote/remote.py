@@ -328,19 +328,12 @@ class UniversalRemote(RemoteEntity):
                 unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
                 # Signal Tasmota LED (or other indicator) that learning has started
-                led_entity_id = getattr(self, "_led_entity_id", None)
-                domain = None
-                if led_entity_id and isinstance(led_entity_id, str):
-                    if "." in led_entity_id:
-                        domain = led_entity_id.split(".", 1)[0]
-                        await self.hass.services.async_call(
-                            domain, "turn_on", {"entity_id": led_entity_id}, blocking=True
-                        )
-                    else:
-                        _LOGGER.warning(
-                            "led_entity_id '%s' is not a valid entity id (expected 'domain.entity'), skipping indicator",
-                            led_entity_id,
-                        )
+                led_entity_id = getattr(self, "_led_entity_id", None)                
+                if led_entity_id:
+                    domain = led_entity_id.split(".")[0]                    
+                    await self.hass.services.async_call(
+                        domain, "turn_on", {"entity_id": led_entity_id}, blocking=True
+                    )
 
                 try:
                     learned_code = await asyncio.wait_for(event_future, timeout=learning_timeout.total_seconds())
@@ -360,7 +353,7 @@ class UniversalRemote(RemoteEntity):
                             await unsub()
                         else:
                             unsub()
-                    if led_entity_id and domain:
+                    if led_entity_id:
                         await self.hass.services.async_call(
                             domain, "turn_off", {"entity_id": led_entity_id}, blocking=True
                         )
