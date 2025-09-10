@@ -328,9 +328,9 @@ class UniversalRemote(RemoteEntity):
                 unsub = await async_subscribe(self.hass, topic, _mqtt_message_received)
 
                 # Signal Tasmota LED (or other indicator) that learning has started
-                led_entity_id = getattr(self, "_led_entity_id", None)
-                domain = led_entity_id.split(".")[0]
-                if led_entity_id:                    
+                led_entity_id = getattr(self, "_led_entity_id", None)                
+                if led_entity_id:
+                    domain = led_entity_id.split(".")[0]                    
                     await self.hass.services.async_call(
                         domain, "turn_on", {"entity_id": led_entity_id}, blocking=True
                     )
