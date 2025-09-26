@@ -59,6 +59,14 @@ api:
       variables:
         command: int[] # ← use int[] for a list of integers
       then:
+        - lambda: |-
+            // Build a comma‑separated string representation for logging
+            std::string out;
+            for (size_t i = 0; i < command.size(); i++) {
+              if (i != 0) out += ",";
+              out += to_string(command[i]);
+            }
+            ESP_LOGD("universal_remote", "API service 'send' called with command: %s", out.c_str());
         - remote_transmitter.transmit_raw:
             code: !lambda |-
               return command;
