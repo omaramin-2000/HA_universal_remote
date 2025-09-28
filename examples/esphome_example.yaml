@@ -18,7 +18,7 @@ wifi:
     ap_timeout: 1min
 
   on_connect:
-    - delay: 5s  # Allows time for BLE provisioning results to be sent
+    - delay: 5s  # Allow time for BLE provisioning results to be sent
     - ble.disable:
   on_disconnect:
     - ble.enable:
@@ -121,25 +121,6 @@ remote_receiver:
 remote_transmitter:
   pin: GPIO23
   carrier_duty_percent: 50%
-
-# text:
-#   - platform: template
-#     name: "Send Command"
-#     id: send_cmd
-#     optimistic: true
-#     mode: text
-#     on_value:
-#       then:
-#         - remote_transmitter.transmit_raw:
-#             code: !lambda |-
-#               std::vector<long> out;
-#               size_t last = 0, next = 0;
-#               while ((next = x.find(',', last)) != std::string::npos) {
-#                 out.push_back(atoi(x.substr(last, next - last).c_str()));
-#                 last = next + 1;
-#               }
-#               out.push_back(atoi(x.substr(last).c_str()));
-#               return out;
 
 # Enable Web Server
 web_server:
