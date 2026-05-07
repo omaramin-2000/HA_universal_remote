@@ -122,6 +122,18 @@ remote_transmitter:
   pin: GPIO23
   carrier_duty_percent: 50%
 
+infrared:
+  # IR transmitter instance
+  - platform: ir_rf_proxy
+    name: IR Proxy Transmitter
+    id: ir_proxy_tx
+    remote_transmitter_id: ir_tx
+  # IR receiver instance
+  - platform: ir_rf_proxy
+    name: IR Proxy Receiver
+    id: ir_proxy_rx
+    remote_receiver_id: ir_rx
+
 # Enable Web Server
 web_server:
   port: 80
